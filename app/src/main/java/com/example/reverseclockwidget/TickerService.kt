@@ -127,7 +127,7 @@ class TickerService : Service() {
                             val height = (targetHdp * dm.density).toInt().coerceAtLeast((110 * dm.density).toInt())
                             
                             val views = android.widget.RemoteViews(packageName, R.layout.clock_widget)
-                            val bitmap = ClockWidget.createClockBitmap(width, height)
+                            val bitmap = ClockWidget.createClockBitmap(this@TickerService, width, height)
                             views.setImageViewBitmap(R.id.clock_image, bitmap)
                             
                             appWidgetManager.updateAppWidget(widgetId, views)

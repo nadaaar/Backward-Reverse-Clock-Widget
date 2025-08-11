@@ -81,6 +81,16 @@ class ClockWidget : AppWidgetProvider() {
     }
 
     companion object {
+        private const val PREFS_NAME = "clock_prefs"
+        private const val KEY_COLOR = "clock_color" // values: "black" or "white"
+
+        private fun getClockColor(context: Context): Int {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return when (prefs.getString(KEY_COLOR, "black")) {
+                "white" -> Color.WHITE
+                else -> Color.BLACK
+            }
+        }
         private fun dpToPx(context: Context, dp: Int): Int {
             return TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP,
@@ -119,50 +129,23 @@ class ClockWidget : AppWidgetProvider() {
             // Get current widget dimensions (dp) and convert to px for crisp rendering
             val (width, height) = resolveWidgetSizePx(context, appWidgetManager, appWidgetId)
             
-            val bitmap = createClockBitmap(width, height)
+            val bitmap = createClockBitmap(context, width, height)
             views.setImageViewBitmap(R.id.clock_image, bitmap)
 
-            // Check permissions and set click to open settings if needed
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                alarmManager.canScheduleExactAlarms()
-            } else {
-                true
-            }
-            val ignoringBatteryOpts = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                powerManager.isIgnoringBatteryOptimizations(context.packageName)
-            } else {
-                true
-            }
-
-            var settingsIntent: Intent? = null
-            if (!canScheduleExact) {
-                settingsIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                }
-            } else if (!ignoringBatteryOpts) {
-                settingsIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                }
-            }
-
-            if (settingsIntent != null) {
-                val pendingIntent = android.app.PendingIntent.getActivity(
-                    context,
-                    0,
-                    settingsIntent,
-                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-                )
-                views.setOnClickPendingIntent(R.id.clock_image, pendingIntent)
-            } else {
-                views.setOnClickPendingIntent(R.id.clock_image, null)
-            }
+            // Make widget tappable to open settings
+            val settingsIntent = Intent(context, MainActivity::class.java)
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context,
+                0,
+                settingsIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.clock_image, pendingIntent)
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
 
-        fun createClockBitmap(width: Int, height: Int): Bitmap {
+        fun createClockBitmap(context: Context, width: Int, height: Int): Bitmap {
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -170,15 +153,18 @@ class ClockWidget : AppWidgetProvider() {
             val centerY = height / 2f
             val radius = min(centerX, centerY) * 0.95f
 
+            val strokeColor = getClockColor(context)
+
             // Background (transparent by default) - keep clear for widget blending
             // No tick marks; only numbers as requested
             paint.style = Paint.Style.STROKE
-            paint.color = Color.BLACK
+            paint.color = strokeColor
             paint.strokeWidth = Math.max(2.5f, radius * 0.006f)
             canvas.drawCircle(centerX, centerY, radius, paint)
 
             // Draw numbers (reversed placement)
             paint.style = Paint.Style.FILL
+            paint.color = strokeColor
             paint.textSize = Math.max(24f, radius * 0.18f)
             paint.textAlign = Paint.Align.CENTER
             for (i in 1..12) {
@@ -209,12 +195,12 @@ class ClockWidget : AppWidgetProvider() {
             // Hour hand (reversed angle)
             var hourAngle = -(hour * 30f + minute * 0.5f + smoothSecond * (0.5f / 60f))
             if (hourAngle < 0) hourAngle += 360f
-            drawHand(canvas, centerX, centerY, hourAngle, radius * 0.5f, hourWidth, Color.BLACK)
+            drawHand(canvas, centerX, centerY, hourAngle, radius * 0.5f, hourWidth, strokeColor)
 
             // Minute hand (reversed angle)
             var minAngle = -(minute * 6f + smoothSecond * 0.1f)
             if (minAngle < 0) minAngle += 360f
-            drawHand(canvas, centerX, centerY, minAngle, radius * 0.75f, minuteWidth, Color.BLACK)
+            drawHand(canvas, centerX, centerY, minAngle, radius * 0.75f, minuteWidth, strokeColor)
 
             // Second hand (reversed angle, red for visibility)
             var secAngle = -(smoothSecond * 6f)
@@ -223,7 +209,7 @@ class ClockWidget : AppWidgetProvider() {
 
             // Center hub
             paint.style = Paint.Style.FILL
-            paint.color = Color.BLACK
+            paint.color = strokeColor
             canvas.drawCircle(centerX, centerY, Math.max(4f, radius * 0.035f), paint)
 
             return bitmap
